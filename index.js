@@ -23,7 +23,7 @@ function HeaderLink(name, href, fn) {
 }
 
 function Link(name, href) {
-    return c.A(tw`text-[16px] leading-[22px] cursor-pointer hover:text-[#0000004c] transition-all`, attr.href(href), name);
+    return c.A(tw`text-[14px] leading-[22px] cursor-pointer hover:text-[#0000004c] transition-all`, attr.href(href), name);
 }
 
 function TextLink(text, href) {
@@ -51,14 +51,24 @@ const currentUser = Val(Number.isNaN(_currentUser) ? null : _currentUser).on(val
 const Header = c.Header(
     tw`flex flex-row gap-[36px]`,
     c(tw`flex-1`),
-    HeaderLink('Все программы', '#courses'),
-    HeaderLink('Задать вопрос', '#ask'),
-    _ => currentUser() == undefined
-        ? [
-            HeaderLink('Регистрация', '#register'),
-            HeaderLink('Авторизация', '#login'),
+    _ => {
+        let user = currentUser();
+        if (user) {
+            user = data.users.find(u => u.id === user);
+        }
+        return [
+            !user?.isTeacher && [
+                HeaderLink('Все программы', '#courses'),
+                HeaderLink('Задать вопрос', '#ask')
+            ],
+            user == undefined ?
+                [
+                    HeaderLink('Регистрация', '#register'),
+                    HeaderLink('Авторизация', '#login'),
+                ]
+            : HeaderLink('Мои курсы', '#courses/my'),
         ]
-    : HeaderLink('Мои курсы', '#courses/my'),
+    }
 );
 
 const Footer = c.Footer(
@@ -69,7 +79,7 @@ const Footer = c.Footer(
     c(tw`mt-[33px]`),
     c.Hr(tw`w-full border-[#d9d9d9] border-t`),
     c(tw`mt-[33px]`),
-    c(tw`flex gap-[40px]`,
+    c(tw`flex gap-[40px] justify-between`,
         c.Span(tw`text-[16px] leading-[22px] text-[#0000004c]`, '© 2022 фабриканавыков.ру'),
         Link('Авторизация для преподавателей', '#login'),
         Link('Политика конфиденциальности', '#privacy'),
@@ -124,8 +134,12 @@ function TitledInput(name, val, ...modifiers) {
     )
 }
 
-function TextInput() {
-    return c.Textarea(tw`w-full resize-y rounded-[24px] min-h-[120px] border border-[#dcdcdc] text-[16px] px-[24px] py-[24px]`)
+function TextInput(val) {
+    return c.Textarea(
+        tw`w-full resize-y rounded-[24px] min-h-[120px] border border-[#dcdcdc] text-[16px] px-[24px] py-[24px]`,
+        prop.value(val),
+        on.input(e => val(e.target.value))
+    )
 }
 
 function ModalPage(name, ...content) {
@@ -136,7 +150,7 @@ function ModalPage(name, ...content) {
                 c.Img(tw`w-[196px]`, attr.src(mainImageUrl)),
             ),
             c.Section(tw`px-[96px] border shadowed border-[#dcdcdc] rounded-[37px] py-[32px] bg-white`,
-                c.H1(tw`text-shadow font-bold text-[48px] leading-[48px] text-[#00000099] text-center`, name),
+                c.H1(tw`text-shadow-1 font-bold text-[48px] leading-[48px] text-[#00000099] text-center`, name),
                 c(tw`mt-[19px]`),
                 ...content
             )
@@ -198,7 +212,8 @@ function Register() {
                     name: form.name, surname: form.surname, patronym: form.patronym,
                     login: form.login, email: form.email, password: form.password,
                     phone: form.phone
-                })
+                });
+                document.location.hash = '#login';
                 return false
             }),
             c(tw`flex gap-[16px]`,
@@ -244,7 +259,14 @@ function RowHeader(text) {
     return c(tw`text-[28px] leading-[68px] font-semibold border-b-4 border-black pl-[26px]`, text);
 }
 
-function CourseCardButton(text, fn) {
+function DisabledCardButton(text) {
+    return c.Button(
+        tw`bg-[#a5a5a5] text-[#ffffff63] text-[20px] leading-[29px] font-bold p-[8px] min-w-[240px] max-w-[390px] rounded-full cursor-default`,
+        text
+    );
+}
+
+function CardButton(text, fn) {
     return c.Button(
         tw`bg-[#57DE28] text-white text-[20px] leading-[29px] font-bold p-[8px] min-w-[240px] max-w-[390px] rounded-full cursor-pointer`,
         on.click(fn),
@@ -252,14 +274,35 @@ function CourseCardButton(text, fn) {
     );
 }
 
+function BaseCard(name, ...content) {
+    return c(tw`flex px-[24px] py-[37px] gap-[37px] rounded-[19px] items-center border border-[#0000004c] bg-[#00000009]`,
+        c(tw`text-[32px] font-medium leading-[39px]`, name),
+        c(tw`flex-1`),
+        content
+    );
+}
+
+function LessonCard(lesson) {
+    return BaseCard(lesson.name, CardButton('Открыть', _=>document.location.hash='#lesson/'+lesson.id));
+}
+
 function CourseCard(course) {
     return c(tw`flex px-[24px] py-[37px] gap-[37px] rounded-[19px] items-center border border-[#0000004c] bg-[#00000009]`,
         c(tw`text-[32px] font-medium leading-[39px]`, course.name),
         c(tw`flex-1`),
-        CourseCardButton('Записаться', _=> {
-            myCourses.add(course.id);
-            body.refresh()
-        })
+        !course.mine ?
+            course.disabled ? DisabledCardButton('Набор закрыт')
+                : CardButton('Записаться', _=> {
+                    if (currentUser() == null) {
+                        return document.location.hash = '#login';
+                    }
+                    data.userCourses.create({courseId: course.id, userId: currentUser()});
+                    page(Router());
+                })
+        : [
+            c(tw`text-[24px] font-medium leading-[29px]`, 'Урок ', course.lessonsComplited, '/', course.lessonsTotal),
+            CardButton('Продолжить', _ => document.location.hash='#course/'+course.id)
+        ]
         // : [
         //     CourseCardButton('Начать курс')
         // ]
@@ -275,79 +318,133 @@ function CourseCard(course) {
     );
 }
 
-const MyCourses = Page(
-    c(tw`flex`,
-        c.H1(tw`text-[60px] leading-[68px] font-bold text-[#000] m-0`, 'Мои курсы'),
-    ),
-    c(tw`mt-[12px]`),
-    c(tw`border border-[#dcdcdc] rounded-[37px] px-[17px] py-[26px] bg-white`,
-        c(tw`flex`, c(tw`flex-1`), RowHeader('Программирование')),
-        c(tw`mt-[48px]`),
-        CourseCard('Язык программирования C#', 7, 35),
-        c(tw`mt-[25px]`),
-        CourseCard('Структуры и алгоритмы данных', 0, 35),
-        c(tw`mt-[25px]`),
-        c(tw`flex`, c(tw`flex-1`), RowHeader('Дизайн')),
-        c(tw`mt-[48px]`),
-        CourseCard('Введение в Figma', 8, 10),
-        c(tw`mt-[25px]`),
-        CourseCard('Дизайн в AutoCad', 1, 1),
-        c(tw`mt-[60px] flex gap-[24px] items-center`,
-            c(tw`flex-1`),
-            c(tw`text-[24px] leading-[34px]`, 'Запишитесь на новые курсы прямо сейчас'),
-            c.Button(tw`text-[24px] leading-[29px] text-white rounded-full px-[18px] py-[8px] bg-[#0089EF] cursor-pointer`, 'Каталог курсов')
-        ),
-    )
-);
+function calcLessonsCount(courseId) {
+    return data.chapters.filter(ch => ch.courseId === courseId)
+        .map(ch => data.lessons.filter(l => l.chapterId === ch.id).length)
+        .reduce((a, b) => a+b, 0);
+    
+}
 
 function Courses(filter) {
-    const courses = data.courses.filter(course => !filter || course.topic === filter);
+    let courses = [];
+    const myCourses = new Set(data.userCourses.filter(uc => uc.userId === currentUser()).map(uc => uc.courseId))
+    if (filter === 'my') {
+        courses = data.courses.filter(c => myCourses.has(c.id));
+    } else {
+        courses = data.courses.filter(course => !filter || course.topic === filter);
+    }
+    courses = courses.map(c => {
+        if (myCourses.has(c.id)) {
+            return ({mine: true, lessonsComplited: 0, lessonsTotal: calcLessonsCount(c.id), ...c})
+        }
+        return c;
+    });
     const coursesByTopic = data.groupBy(courses, 'topic');
     return Page(
         c(tw`flex`,
-            c.H1(tw`text-[60px] leading-[68px] font-bold text-[#000] m-0`, 'Курсы'),
+            c.H1(tw`text-[60px] leading-[68px] font-bold text-[#000] ml-[36px]`, 'Курсы'),
         ),
         c(tw`mt-[12px]`),
-        c(tw`border border-[#dcdcdc] rounded-[37px] px-[17px] py-[26px] bg-white`,
-        coursesByTopic.map(([topic, courses]) => [
+        c(tw`border border-[#dcdcdc] rounded-[37px] px-[17px] py-[26px] bg-white space-y-[48px]`,
+            coursesByTopic.map(([topic, courses], i) => [
                 c(tw`flex`, c(tw`flex-1`), RowHeader(data.topics.find(t => t.id === topic).name)),
-                c(tw`mt-[48px]`),
                 c(tw`space-y-[25px]`, courses.map(course => CourseCard(course)))
+            ]),
+            filter === 'my'
+                && c(tw`flex gap-[24px] items-center`,
+                    c(tw`flex-1`),
+                    c(tw`text-[24px] leading-[34px]`, 'Запишитесь на новые курсы прямо сейчас'),
+                    c.Button(
+                        tw`text-[24px] leading-[29px] text-white rounded-full px-[18px] py-[8px] bg-[#0089EF] cursor-pointer`,
+                        on.click(_ => document.location.hash = '#courses'),
+                        'Каталог курсов')
+                )
+        )
+    )
+}
+
+function Lesson(id) {
+    const lesson = data.lessons.find(l => l.id === id);
+    const chapter = data.chapters.find(ch => ch.id === lesson.chapterId);
+    const course = data.courses.find(c => c.id === chapter.courseId);
+    const user = data.users.find(u => u.id === currentUser());
+    if (user.isTeacher) {
+        const answers = data.answers.filter(a => a.lessonId === lesson.id).map(a => ({
+            user: data.users.find(u => u.id === a.userId),
+            ...a
+        }));
+        return Page(
+            c(tw`flex`,
+                c.H1(tw`text-[60px] leading-[68px] font-bold text-[#000] ml-[36px]`, course.name),
+            ),
+            c(tw`mt-[12px]`),
+            c(tw`border border-[#dcdcdc] rounded-[37px] px-[45px] py-[26px] bg-white`,
+                c(tw`flex items-center`, c.H2(tw`text-[40px] leading-[68px] font-semibold text-shadow-2`, lesson.name), c(tw`flex-1`), RowHeader('Урок '+(lesson.order+1))),
+                answers.map(a => [
+                    c.H2(tw`text-[24px] leading-[68px] font-semibold`,
+                        `${a.user.surname} ${a.user.name[0].toLocaleUpperCase()}. ${a.user.patronym[0].toLocaleUpperCase()}. (${a.user.login})`
+                    ),
+                    c(tw`w-full rounded-[24px] min-h-[120px] border border-[#dcdcdc] text-[16px] px-[24px] py-[24px]`, a.comment)
+                ])
+            )
+        )    
+    }
+    const answer = Val(data.answers.find(a => a.userId === currentUser() && a.lessonId == lesson.id)?.comment || '');
+    return Page(
+        c(tw`flex`,
+            c.H1(tw`text-[60px] leading-[68px] font-bold text-[#000] ml-[36px]`, course.name),
+        ),
+        c(tw`mt-[12px]`),
+        c(tw`border border-[#dcdcdc] rounded-[37px] px-[45px] py-[26px] bg-white`,
+            c(tw`flex items-center`, c.H2(tw`text-[40px] leading-[68px] font-semibold text-shadow-2`, lesson.name), c(tw`flex-1`), RowHeader('Урок '+(lesson.order+1))),
+            c(tw`p-[24px]`,
+                c.Iframe(tw`w-full aspect-video rounded-[12px]`, attr.src(lesson.content)),
+            ),
+            lesson.task && [
+                c(tw`flex items-center`, c(tw`flex-1`), RowHeader('Задание')),
+                c.P(tw`leading-[68px] text-[28px] font-semibold`, lesson.task),
+                c(tw`mt-[25px]`),
+                c(tw`flex items-center`, c(tw`flex-1`), RowHeader('Решение')),
+                c(tw`mt-[25px]`),
+                TextInput(answer),
+                c(tw`mt-[25px]`),
+                c(tw`flex justify-center`,
+                    BlueButton('Отправить', () => {
+                        const found = data.answers.find(a => a.userId === currentUser() && a.lessonId == lesson.id);
+                        if (!found) {
+                            data.answers.create({ userId: currentUser(), lessonId: lesson.id, comment: answer() })
+                        } else {
+                            found.comment = answer();
+                            data.answers.update();
+                        }
+                    })
+                )
+            ]
+        )
+    )
+}
+
+function Course(id) {
+    const course = data.courses.find(c => c.id === id);
+    const chapters = data.chapters.filter(ch => ch.courseId === id);
+    return Page(
+            c(tw`flex`,
+            c.H1(tw`text-[60px] leading-[68px] font-bold text-[#000] ml-[36px]`, course.name),
+        ),
+        c(tw`mt-[12px]`),
+        c(tw`border border-[#dcdcdc] rounded-[37px] px-[45px] py-[26px] bg-white space-y-[48px]`,
+            chapters.map(ch => [
+                c(tw`flex`, c(tw`flex-1`), RowHeader(ch.name)),
+                c(tw`space-y-[25px]`, data.lessons.filter(l => l.chapterId === ch.id).map(LessonCard))
             ])
         )
     )
 }
 
-
-const lessonPage = Page(
-    c(tw`flex`,
-        c.H1(tw`text-[60px] leading-[68px] font-bold text-[#000] m-0`, 'Язык программирования C#'),
-    ),
-    c(tw`mt-[12px]`),
-    c(tw`border border-[#dcdcdc] rounded-[37px] px-[45px] py-[26px] bg-white`,
-        c(tw`flex items-center`, c.H2(tw`text-[40px] leading-[68px] font-semibold text-shadow-2`, 'Переменные'), c(tw`flex-1`), RowHeader('Урок 8')),
-        c(tw`p-[24px]`,
-            c.Iframe(tw`w-full aspect-video rounded-[12px]`, attr.src('https://www.youtube.com/embed/tgbNymZ7vqY')),
-        ),
-        c(tw`flex items-center`, c(tw`flex-1`), RowHeader('Задание')),
-        c.P(tw`leading-[68px] text-[28px] font-semibold`),
-        c(tw`mt-[25px]`),
-        c(tw`flex items-center`, c(tw`flex-1`), RowHeader('Решение')),
-        c(tw`mt-[25px]`),
-        TextInput(),
-        c(tw`mt-[25px]`),
-        c(tw`flex justify-center`,
-            BlueButton('Отправить')
-        ),
-    )
-);
-
 function Router() {
     const route = document.location.hash.slice(1);
     return route === ''
         ? MainPage
-    : route === 'lesson'
-        ? lessonPage
     : route === 'contacts'
         ? Contacts
     : route === 'login'
@@ -356,10 +453,12 @@ function Router() {
         ? Register()
     : route === 'ask'
         ? AskQuestion
-    : route === 'courses/my'
-        ? MyCourses
     : route.startsWith('courses')
         ? Courses(route.slice(8))
+    : route.startsWith('course')
+        ? Course(Number(route.slice(7)))
+    : route.startsWith('lesson')
+        ? Lesson(Number(route.slice(7)))
     : route === 'agreement'
         ? UserAgreements
     : route == 'privacy'
